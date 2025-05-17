@@ -1,0 +1,99 @@
+-- Drop tables if they exist (in reverse dependency order)
+DROP TABLE IF EXISTS predicted_prices;
+DROP TABLE IF EXISTS prediction_metadata;
+DROP TABLE IF EXISTS strategy_signals;
+DROP TABLE IF EXISTS coin_catalog;
+
+-- Coin catalog
+CREATE TABLE coin_catalog (
+    symbol TEXT PRIMARY KEY,
+    name TEXT,
+    tracked BOOLEAN DEFAULT TRUE
+);
+
+
+-- Insert symbols (ignore if they already exist)
+INSERT INTO coin_catalog (symbol, name)
+VALUES 
+  ('BTCUSDT', 'BTC'),
+  ('ETHUSDT', 'ETH'),
+  ('BNBUSDT', 'BNB'),
+  ('SOLUSDT', 'SOL'),
+  ('XRPUSDT', 'XRP'),
+  ('DOGEUSDT', 'DOGE'),
+  ('ADAUSDT', 'ADA'),
+  ('TRXUSDT', 'TRX'),
+  ('SUIUSDT', 'SUI'),
+  ('LINKUSDT', 'LINK'),
+  ('AVAXUSDT', 'AVAX'),
+  ('XLMUSDT', 'XLM'),
+  ('SHIBUSDT', 'SHIB'),
+  ('HBARUSDT', 'HBAR'),
+  ('TONUSDT', 'TON'),
+  ('BCHUSDT', 'BCH'),
+  ('DOTUSDT', 'DOT'),
+  ('LTCUSDT', 'LTC'),
+  ('UNIUSDT', 'UNI'),
+  ('ATOMUSDT', 'ATOM'),
+  ('ETCUSDT', 'ETC'),
+  ('VETUSDT', 'VET'),
+  ('FILUSDT', 'FIL'),
+  ('EOSUSDT', 'EOS'),
+  ('XTZUSDT', 'XTZ'),
+  ('NEOUSDT', 'NEO'),
+  ('MKRUSDT', 'MKR'),
+  ('AAVEUSDT', 'AAVE'),
+  ('THETAUSDT', 'THETA')
+ON CONFLICT (symbol) DO NOTHING;
+
+
+
+-- Metadata table
+CREATE TABLE prediction_metadata (
+    id UUID PRIMARY KEY,
+    coin TEXT NOT NULL REFERENCES coin_catalog(symbol),
+    model_name TEXT NOT NULL,
+    input_width INT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    metadata_json JSONB
+);
+
+CREATE TABLE predicted_prices (
+    id UUID REFERENCES prediction_metadata(id) ON DELETE CASCADE,
+    prediction_time TIMESTAMP NOT NULL,
+    price NUMERIC NOT NULL,
+    is_historical BOOLEAN DEFAULT FALSE
+);
+
+
+CREATE TABLE strategy_signals (
+    id UUID PRIMARY KEY,
+    coin TEXT NOT NULL REFERENCES coin_catalog(symbol),
+    model_name TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    signal JSONB
+);
+
+-- Drop table if exists
+DROP TABLE IF EXISTS binance_klines;
+
+-- Kline Data Table
+CREATE TABLE binance_klines (
+    id SERIAL PRIMARY KEY,
+    symbol TEXT NOT NULL REFERENCES coin_catalog(symbol),
+    timeframe TEXT NOT NULL, -- e.g. '1h', '15m', '1d'
+    open_time TIMESTAMP NOT NULL,
+    open NUMERIC NOT NULL,
+    high NUMERIC NOT NULL,
+    low NUMERIC NOT NULL,
+    close NUMERIC NOT NULL,
+    volume NUMERIC NOT NULL,
+    close_time TIMESTAMP NOT NULL,
+    quote_asset_volume NUMERIC,
+    number_of_trades INT,	
+    taker_buy_base_asset_volume NUMERIC,
+    taker_buy_quote_asset_volume NUMERIC,
+    UNIQUE(symbol, timeframe, open_time)  -- Prevent duplicates for symbol + interval + time
+);
+
+select * from binance_klines;
