@@ -19,5 +19,5 @@ pip install -r requirements.txt
 ## Run
 
 ```bash
-python src/etl_klines.py
+python -m  src.backfill_runner 
 ```
