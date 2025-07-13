@@ -13,6 +13,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY ./src ./src
 COPY ./keys ./keys
-
-# Run ETL script
-CMD ["python", "-m", "src.etl_klines"]
+COPY backfill_runner .
+RUN chmod +x /app/backfill_runner
+ENTRYPOINT ["/app/backfill_runner.sh"]
