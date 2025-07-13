@@ -1,0 +1,11 @@
+volumes:
+  - name: db-creds                 # ✅ volume name used below
+    secret:
+      secretName: db-creds
+      items:
+        - key: keys.env
+          path: .env               # This creates /app/keys/.env
+volumeMounts:
+  - name: db-creds                 # ✅ this must match the volume name
+    mountPath: /app/keys
+    readOnly: true

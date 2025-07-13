@@ -6,6 +6,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from datetime import datetime
 import dotenv
 # Load environment variables
+
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 dotenv.load_dotenv("keys/.env")
 
 
@@ -34,10 +39,10 @@ def insert_to_postgres(df, engine):
         stmt = stmt.on_conflict_do_nothing(index_elements=["symbol", "timeframe", "open_time"])
         session.execute(stmt)
         session.commit()
-        print(f"✅ Inserted {len(records)} rows.")
+        logger.info(f"Inserted {len(records)} rows into {TABLE_NAME}.")
     except Exception as e:
         session.rollback()
-        print(f"❌ Insert failed: {e}")
+        logger.error(f"Insert failed: {e}")
     finally:
         session.close()
 
