@@ -10,7 +10,7 @@ Environment variables are the same as your main ETL.
 import time
 from datetime import datetime
 from backfill import backfill_symbol          # helper we wrote earlier
-from etl_klines import (                  # ← put your actual module name
+from modules.etl_klines import (                  # ← put your actual module name
     get_db_engine,
     get_tracked_symbols,
 )

@@ -6,7 +6,7 @@ import pandas as pd
 from binance.client import Client
 from datetime import datetime, timedelta
 from pandas import Timestamp
-from Modules.DB import get_db_engine, insert_to_postgres, get_tracked_symbols , get_latest_open_time
+from modules.DB import get_db_engine, insert_to_postgres, get_tracked_symbols , get_latest_open_time
 import logging
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
