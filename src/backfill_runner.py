@@ -7,10 +7,9 @@ already have and insert them idempotently into PostgreSQL.
 Environment variables are the same as your main ETL.
 """
 
-import time
 from datetime import datetime
-from backfill import backfill_symbol          # helper we wrote earlier
-from modules.etl_klines import (                  # ← put your actual module name
+from src.backfill import backfill_symbol          
+from src.modules.etl_klines import (                  
     get_db_engine,
     get_tracked_symbols,
 )

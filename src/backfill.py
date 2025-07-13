@@ -10,8 +10,8 @@ from binance.client import Client
 from datetime import datetime, timedelta
 from sqlalchemy import MetaData
 from pandas import Timestamp
-from modules.DB import get_db_engine, insert_to_postgres 
-from modules.etl_klines import clean_klines, run_etl
+from src.modules.DB import get_db_engine, insert_to_postgres 
+from src.modules.etl_klines import clean_klines, run_etl
 
 #Load environment variables
 load_dotenv("keys/.env")
