@@ -18,6 +18,7 @@ load_dotenv("keys/.env")
 TABLE_NAME = os.getenv("TABLE_NAME")
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_SECRET_KEY")
+client = Client(API_KEY, API_SECRET)
 
 
 def backfill_symbol(

@@ -31,7 +31,6 @@ def insert_to_postgres(df, engine):
     try:
         records = df.to_dict(orient="records")
         stmt = pg_insert(table).values(records)
-        print(records)
         stmt = stmt.on_conflict_do_nothing(index_elements=["symbol", "timeframe", "open_time"])
         session.execute(stmt)
         session.commit()
