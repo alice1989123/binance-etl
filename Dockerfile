@@ -15,4 +15,4 @@ COPY ./src ./src
 COPY ./keys ./keys
 
 # Run ETL script
-CMD ["python", "src/etl_klines.py"]
+CMD ["python", "-m", "src.etl_klines"]
