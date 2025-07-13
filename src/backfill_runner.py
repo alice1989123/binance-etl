@@ -13,6 +13,15 @@ from src.modules.etl_klines import (
     get_db_engine,
     get_tracked_symbols,
 )
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    filename="logs/etl.log",            
+    filemode="a"                   
+)
+logger = logging.getLogger(__name__)
 
 # -------------------------------------------------------------------------
 #  CONFIG – tweak to taste
@@ -36,13 +45,15 @@ def main():
                 sleep_seconds=SLEEP_SECONDS,
             )
         except Exception as exc:
-            print(f"❌ Backfill failed for {sym}: {exc}")
+            logger.error(f"Backfill failed for {sym}: {exc}")
             # Optional: time.sleep(10)  # cool-down on unexpected errors
 
 
 if __name__ == "__main__":
     started = datetime.utcnow()
     print(f"🕒 Back-fill started at {started:%Y-%m-%d %H:%M:%S} UTC")
+    logger.info(f"Back-fill started at {started:%Y-%m-%d %H:%M:%S} UTC")
     main()
     finished = datetime.utcnow()
     print(f"✅ All done ({finished - started})")
+    logger.info(f"All done ({finished - started})")

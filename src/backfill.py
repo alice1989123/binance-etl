@@ -12,6 +12,16 @@ from sqlalchemy import MetaData
 from pandas import Timestamp
 from src.modules.DB import get_db_engine, insert_to_postgres 
 from src.modules.etl_klines import clean_klines, run_etl
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    filename="logs/etl.log",            
+    filemode="a"                   
+)
+logger = logging.getLogger(__name__)
+
 
 #Load environment variables
 load_dotenv("keys/.env")
@@ -19,6 +29,7 @@ TABLE_NAME = os.getenv("TABLE_NAME")
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_SECRET_KEY")
 client = Client(API_KEY, API_SECRET)
+
 
 
 def backfill_symbol(
@@ -52,7 +63,7 @@ def backfill_symbol(
 
     earliest_ts_ms = int(earliest.timestamp() * 1000)
 
-    print(
+    logger.info(
         f"🔄 Back-filling {symbol} ({timeframe}) from "
         f"{datetime.utcfromtimestamp(backfill_ts_ms/1000):%Y-%m-%d} "
         f"to {earliest:%Y-%m-%d}"
@@ -68,7 +79,7 @@ def backfill_symbol(
             limit=1000,
         )
         if not batch:
-            print("⚠️ Binance returned empty batch — stopping.")
+            logger.warning("Binance returned empty batch — stopping.")
             break
 
         df = clean_klines(batch, symbol, timeframe)
@@ -80,4 +91,4 @@ def backfill_symbol(
         earliest_ts_ms = batch[0][0]  # open_time of first candle
         time.sleep(sleep_seconds)
 
-    print("✅ Backfill complete.")
+    logger.info("✅ Backfill complete.")
