@@ -3,13 +3,14 @@ import time
 from datetime import datetime
 from dotenv import load_dotenv
 import pandas as pd
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from binance.client import Client
 from datetime import datetime, timedelta
-from sqlalchemy import MetaData
 from pandas import Timestamp
+from Modules.DB import get_db_engine, insert_to_postgres, get_tracked_symbols , get_latest_open_time
+import logging
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv("keys/.env")
 
@@ -17,36 +18,16 @@ API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_SECRET_KEY")
 client = Client(API_KEY, API_SECRET)
 
-# DB config
-DB_USER = os.getenv("DBUSER")
-DB_PASSWORD = os.getenv("DBPASSWORD")
-DB_HOST = os.getenv("DBHOST")
-DB_PORT = os.getenv("DBPORT")
-DB_NAME = os.getenv("DBNAME")
-TABLE_NAME = "binance_klines"
+TABLE_NAME = os.getenv("TABLE_NAME")  
+
+
+
 
 SLEEP_SECONDS = 1
 INTERVAL = Client.KLINE_INTERVAL_1HOUR
 
 
 
-
-def get_db_engine():
-    url = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    return create_engine(url)
-
-
-def get_latest_open_time(symbol: str, timeframe , engine) -> datetime | None:
-    query = text(f"""
-        SELECT MAX(open_time)
-        FROM {TABLE_NAME}
-        WHERE symbol = :symbol
-        AND timeframe = :timeframe
-    """)
-    with engine.connect() as conn:
-        result = conn.execute(query, {"symbol": symbol , "timeframe": timeframe})   
-        latest = result.scalar()
-    return latest
 
 
 def get_all_binance_klines(symbol: str, start_str: str, end_str: str, interval: str):
@@ -92,6 +73,9 @@ def clean_klines(raw_klines, symbol, timeframe):
         "close": float,
         "volume": float
     })
+    if df.empty:
+        logging.info("⚠️ Cleaned DataFrame is empty, skipping insert.")
+        return
 
     return df[[
     "symbol", "timeframe", "open_time", "close_time", "open", "high", "low", "close",
@@ -100,39 +84,12 @@ def clean_klines(raw_klines, symbol, timeframe):
     ]]
 
 
-def insert_to_postgres(df, engine):
-    metadata = MetaData()
-    metadata.reflect(bind=engine)  # bind here, not in constructor
-    table = metadata.tables[TABLE_NAME]
-
-    Session = sessionmaker(bind=engine)
-    session = Session()
-
-    try:
-        records = df.to_dict(orient="records")
-        stmt = pg_insert(table).values(records)
-        stmt = stmt.on_conflict_do_nothing(index_elements=["symbol", "timeframe", "open_time"])
-        session.execute(stmt)
-        session.commit()
-        print(f"✅ Inserted {len(records)} rows.")
-    except Exception as e:
-        session.rollback()
-        print(f"❌ Insert failed: {e}")
-    finally:
-        session.close()
-
-def get_tracked_symbols(engine) -> list[str]:
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT symbol FROM coin_catalog WHERE tracked = TRUE"))
-        return [row[0] for row in result.fetchall()]
-
 def run_etl(symbol: str, timeframe: str, end: str = "1 Jan 2026"):
     engine = get_db_engine()
 
 
     # Get latest timestamp from DB
     latest_time = get_latest_open_time(symbol, timeframe, engine)
-
     # Use the more recent of (latest_time, one_week_ago)
     if latest_time:
         start_time = latest_time + timedelta(milliseconds=1)
@@ -141,25 +98,36 @@ def run_etl(symbol: str, timeframe: str, end: str = "1 Jan 2026"):
 
     start_str = start_time.strftime("%d %b %Y")
 
-    print(f"🚀 Fetching {symbol} klines ({timeframe}) from {start_str} to {end}")
+    logging.info(f"🚀 Fetching {symbol} klines ({timeframe}) from {start_str} to {end}")
 
     raw = get_all_binance_klines(symbol, start_str, end, interval=timeframe)
     if not raw:
-        print("⚠️ No new data fetched.")
+        logging.info("⚠️ No new data fetched.")
         return 
 
     df = clean_klines(raw, symbol, timeframe)
     now = pd.Timestamp.utcnow().replace(tzinfo=None)  # Make `now` naive
+    logging.info(f"📊 Cleaned DataFrame with {len(df)} rows.")
+    #This line ensure we dont insert klines that are not closed yet
     df = df[df["close_time"] <= now]
+    logging.debug(f"📊 Filtered DataFrame with {len(df)} rows before inserting into DB.")
+    if df.empty:
+        logging.debug(f"⚠️ All rows filtered out (e.g. close_time > now), skipping insert.")
+        return
     insert_to_postgres(df, engine)
 
 
 if __name__ == "__main__":
     engine = get_db_engine()
     symbols = get_tracked_symbols(engine)
+    if not symbols:
+        logging.info("⚠️ No tracked symbols found, exiting.")
+        exit(0)
+
+    logging.info(f"🔄 Starting ETL for {len(symbols)} tracked symbols.")
 
     for symbol in symbols:
         try:
             run_etl(symbol, "1h")
         except Exception as e:
-            print(f"⚠️ ETL failed for {symbol}: {e}")
+            logging.error(f"⚠️ ETL failed for {symbol}: {e}")
