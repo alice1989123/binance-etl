@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: klines-etl-debug
+  namespace: production
+  labels:
+    app: klines-etl
+spec:
+  restartPolicy: Never
+  containers:
+    - name: klines-etl
+      image: registry-docker-registry.registry.svc.cluster.local:5000/klines-etl:latest
+      
+      envFrom:
+        - secretRef:
+            name: db-creds
+      command: ["/bin/bash", "-c"]
+      args: ["echo Pod started; sleep 3600"]
+
+        
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
