@@ -17,4 +17,6 @@ COPY backfill_runner.sh .
 COPY etl_runner.sh .
 
 RUN chmod +x /app/backfill_runner.sh
+RUN chmod +x /app/etl_runner.sh
+
 ENTRYPOINT ["/app/backfill_runner.sh"]
