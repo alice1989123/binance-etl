@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: net-toolbox
+  namespace: default
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: server2   # el nodo que quieras testear
+  restartPolicy: Never
+  containers:
+  - name: toolbox
+    image: docker.io/praqma/network-multitool:latest	
+    command: [ "sh", "-c", "sleep 9999999" ]
+    # └─ Trae: dig, nslookup, curl, ping, traceroute, netcat, iproute2, etc.

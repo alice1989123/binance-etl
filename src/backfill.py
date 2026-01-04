@@ -12,6 +12,8 @@ from sqlalchemy import MetaData
 from pandas import Timestamp
 from src.modules.DB import get_db_engine, insert_to_postgres 
 from src.modules.etl_klines import clean_klines, run_etl
+from src.utils.timeframes import interval_to_ms
+from datetime import timezone
 import logging
 
 logging.basicConfig(
@@ -27,6 +29,11 @@ TABLE_NAME = os.getenv("TABLE_NAME")
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_SECRET_KEY")
 client = Client(API_KEY, API_SECRET)
+
+
+
+
+
 
 
 
@@ -56,7 +63,7 @@ def backfill_symbol(
 
     if earliest is None:
         # No data at all → just call your normal run_etl and exit
-        run_etl(symbol, timeframe)
+        run_etl(symbol, timeframe, end=datetime.now(timezone.utc).strftime("%d %b %Y"))
         return
 
     earliest_ts_ms = int(earliest.timestamp() * 1000)
@@ -67,12 +74,15 @@ def backfill_symbol(
         f"to {earliest:%Y-%m-%d}"
     )
 
+    ms = interval_to_ms(timeframe)
+    window_ms = 1000 * ms 
+
     while earliest_ts_ms > backfill_ts_ms:
         # Ask Binance for ≤1000 klines that end *just* before our earliest row
         batch = client.get_klines(
             symbol=symbol,
             interval=timeframe,
-            startTime=max(backfill_ts_ms, earliest_ts_ms - 1000*3600*1000),
+            startTime=max(backfill_ts_ms, earliest_ts_ms - window_ms),
             endTime=earliest_ts_ms - 1,
             limit=1000,
         )
@@ -81,9 +91,22 @@ def backfill_symbol(
             break
 
         df = clean_klines(batch, symbol, timeframe)
-        now_naive = pd.Timestamp.utcnow().replace(tzinfo=None)
-        df = df[df["close_time"] <= now_naive]
-        insert_to_postgres(df, engine)
+        if df is None or df.empty:
+            logger.info("⚠️ Cleaned DataFrame empty, skipping batch.")
+            earliest_ts_ms = batch[0][0]
+            time.sleep(sleep_seconds)
+            continue
+        now = pd.Timestamp.utcnow().tz_localize(None)
+        ms = interval_to_ms(timeframe)
+        now_ms = int(now.timestamp() * 1000)
+        last_closed_close_ms = (now_ms // ms) * ms
+        last_closed_close = pd.to_datetime(last_closed_close_ms, unit="ms")
+
+        df = df[df["close_time"] <= last_closed_close]
+        if df.empty:
+            logger.info("⚠️ All rows filtered out (not closed yet). Skipping insert.")
+        else:
+            insert_to_postgres(df, engine)
 
         # Prepare next loop (older window)
         earliest_ts_ms = batch[0][0]  # open_time of first candle

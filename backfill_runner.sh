@@ -1,11 +1,12 @@
-#!/bin/bash
-set -e  # Exit immediately on error
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "🟢 $(date '+%F %T') – Starting ETL script"
+TIMEFRAME="${TIMEFRAME:-1d}"
+EARLIEST_DATE="${EARLIEST_DATE:-1 Jan 2017}"
+SLEEP="${SLEEP:-1}"
 
-# Run Python module with logging streamed to both stdout and /tmp/etl.log
-python -m src.modules.etl_klines 2>&1 | tee /tmp/etl.log
-
-python -m src.backfill_runner 2>&1 | tee /tmp/etl.log
-
-echo "✅ $(date '+%F %T') – Script finished"
+echo "Running BACKFILL runner timeframe=${TIMEFRAME} earliest_date=${EARLIEST_DATE} sleep=${SLEEP}"
+python -m src.backfill_runner \
+  --timeframe "${TIMEFRAME}" \
+  --earliest-date "${EARLIEST_DATE}" \
+  --sleep "${SLEEP}"

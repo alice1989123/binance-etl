@@ -3,8 +3,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy import MetaData
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+import pandas as pd
 from datetime import datetime
 import dotenv
+from psycopg2.extras import execute_values
 # Load environment variables
 
 import logging
@@ -27,24 +29,73 @@ def get_db_engine():
     return create_engine(url)
 
 
-def insert_to_postgres(df, engine):
-    metadata = MetaData()
-    metadata.reflect(bind=engine)  # bind here, not in constructor
-    table = metadata.tables[TABLE_NAME]
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    try:
-        records = df.to_dict(orient="records")
-        stmt = pg_insert(table).values(records)
-        stmt = stmt.on_conflict_do_nothing(index_elements=["symbol", "timeframe", "open_time"])
-        session.execute(stmt)
-        session.commit()
-        logger.info(f"Inserted {len(records)} rows into {TABLE_NAME}.")
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Insert failed: {e}")
-    finally:
-        session.close()
+def insert_to_postgres(
+    df: pd.DataFrame,
+    engine,
+    table_name: str | None = None,
+    chunk_size: int = 10_000,
+) -> int:
+    """
+    High-throughput UPSERT into Postgres using psycopg2 execute_values.
+    On conflict (symbol,timeframe,open_time) it updates the candle fields.
+    Returns rows attempted.
+    """
+    if df is None or df.empty:
+        return 0
+
+    table = table_name or TABLE_NAME  # e.g. "public.binance_klines"
+
+    cols = [
+        "symbol",
+        "timeframe",
+        "open_time",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "close_time",
+        "quote_asset_volume",
+        "number_of_trades",
+        "taker_buy_base_asset_volume",
+        "taker_buy_quote_asset_volume",
+    ]
+
+    missing = [c for c in cols if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns for insert: {missing}")
+
+    df2 = df[cols].copy()
+    df2 = df2.where(pd.notnull(df2), None)  # NaN -> NULL
+
+    # Quote all columns (safe for reserved words like "open"/"close")
+    col_sql = ", ".join([f'"{c}"' for c in cols])
+
+    # Update everything except the conflict key columns
+    conflict_cols = {"symbol", "timeframe", "open_time"}
+    set_sql = ", ".join(
+        [f'"{c}" = EXCLUDED."{c}"' for c in cols if c not in conflict_cols]
+    )
+
+    sql = f"""
+        INSERT INTO {table} ({col_sql})
+        VALUES %s
+        ON CONFLICT ("symbol","timeframe","open_time")
+        DO UPDATE SET {set_sql}
+    """
+
+    total = len(df2)
+
+    with engine.begin() as conn:
+        raw = conn.connection
+        with raw.cursor() as cur:
+            for start in range(0, total, chunk_size):
+                chunk = df2.iloc[start:start + chunk_size]
+                values = [tuple(x) for x in chunk.itertuples(index=False, name=None)]
+                execute_values(cur, sql, values, page_size=min(chunk_size, 5000))
+
+    logger.info(f"Upserted (attempted) {total} rows into {table}.")
+    return total
 
 def get_latest_open_time(symbol: str, timeframe , engine) -> datetime | None:
     query = text(f"""

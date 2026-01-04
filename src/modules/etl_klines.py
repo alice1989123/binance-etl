@@ -5,9 +5,10 @@ from dotenv import load_dotenv
 import pandas as pd
 from binance.client import Client
 from datetime import datetime, timedelta
-from pandas import Timestamp
-from src.modules.DB import get_db_engine, insert_to_postgres, get_tracked_symbols , get_latest_open_time
+from src.modules.DB import get_db_engine, insert_to_postgres , get_latest_open_time
 import logging
+from src.utils.timeframes import interval_to_ms
+from datetime import timezone
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -17,16 +18,8 @@ load_dotenv("keys/.env")
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_SECRET_KEY")
 client = Client(API_KEY, API_SECRET)
-
 TABLE_NAME = os.getenv("TABLE_NAME")  
-
-
-
-
-SLEEP_SECONDS = 1
-INTERVAL = Client.KLINE_INTERVAL_1HOUR
-
-
+SLEEP_SECONDS = 1  # Sleep between API calls to respect rate limits
 
 
 
@@ -84,50 +77,42 @@ def clean_klines(raw_klines, symbol, timeframe):
     ]]
 
 
-def run_etl(symbol: str, timeframe: str, end: str = "1 Jan 2026"):
+def run_etl(symbol: str, timeframe: str, end: str | None = None):
+    if end is None:
+        end = datetime.now(timezone.utc).strftime("%d %b %Y")
+
     engine = get_db_engine()
 
-
-    # Get latest timestamp from DB
     latest_time = get_latest_open_time(symbol, timeframe, engine)
-    # Use the more recent of (latest_time, one_week_ago)
     if latest_time:
         start_time = latest_time + timedelta(milliseconds=1)
     else:
-        start_time = datetime.utcnow() - timedelta(days=200)
+        start_time = datetime.now(timezone.utc) - timedelta(days=200)
 
     start_str = start_time.strftime("%d %b %Y")
-
     logging.info(f"🚀 Fetching {symbol} klines ({timeframe}) from {start_str} to {end}")
 
     raw = get_all_binance_klines(symbol, start_str, end, interval=timeframe)
     if not raw:
         logging.info("⚠️ No new data fetched.")
-        return 
+        return
 
     df = clean_klines(raw, symbol, timeframe)
-    now = pd.Timestamp.utcnow().replace(tzinfo=None)  # Make `now` naive
-    logging.info(f"📊 Cleaned DataFrame with {len(df)} rows.")
-    #This line ensure we dont insert klines that are not closed yet
-    df = df[df["close_time"] <= now]
-    logging.debug(f"📊 Filtered DataFrame with {len(df)} rows before inserting into DB.")
-    if df.empty:
-        logging.debug(f"⚠️ All rows filtered out (e.g. close_time > now), skipping insert.")
+    if df is None or df.empty:
+        logging.info("⚠️ Cleaned DF empty, skipping insert.")
         return
+
+    now = pd.Timestamp.utcnow().tz_localize(None)
+    ms = interval_to_ms(timeframe)
+    now_ms = int(now.timestamp() * 1000)
+    last_closed_close_ms = (now_ms // ms) * ms
+    last_closed_close = pd.to_datetime(last_closed_close_ms, unit="ms")
+
+    df = df[df["close_time"] <= last_closed_close]
+    logging.debug(f"📊 Filtered DataFrame with {len(df)} rows before insert.")
+    if df.empty:
+        logging.info("⚠️ All rows filtered out (not closed yet). Skipping insert.")
+        return
+
     insert_to_postgres(df, engine)
 
-
-if __name__ == "__main__":
-    engine = get_db_engine()
-    symbols = get_tracked_symbols(engine)
-    if not symbols:
-        logging.info("⚠️ No tracked symbols found, exiting.")
-        exit(0)
-
-    logging.info(f"🔄 Starting ETL for {len(symbols)} tracked symbols.")
-
-    for symbol in symbols:
-        try:
-            run_etl(symbol, "1h")
-        except Exception as e:
-            logging.error(f"⚠️ ETL failed for {symbol}: {e}")

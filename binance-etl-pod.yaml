@@ -7,6 +7,8 @@ metadata:
     app: klines-etl
 spec:
   restartPolicy: Never
+  nodeSelector:
+    kubernetes.io/hostname: server2
   containers:
     - name: klines-etl
       image: registry-docker-registry.registry.svc.cluster.local:5000/klines-etl:latest
@@ -14,6 +16,7 @@ spec:
       envFrom:
         - secretRef:
             name: db-creds
+       
       command: ["/bin/bash", "-c"]
       args: ["echo Pod started; sleep 3600"]
 
